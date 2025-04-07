@@ -1,27 +1,44 @@
 version: 0.2
 
+env:
+  variables:
+    AWS_ACCOUNT_ID: "725741144521"
+    AWS_DEFAULT_REGION: "us-east-1"
+    IMAGE_REPO_NAME: "unicorn-web-app"
+    IMAGE_TAG: "latest"
+
 phases:
   install:
     runtime-versions:
       java: corretto8
     commands:
       - echo "Installing dependencies..."
-      - yum install -y maven
-  
+      - yum install -y maven docker
+      - echo "Setting up Docker..."
+      - service docker start
+
   pre_build:
     commands:
       - echo "Initializing environment..."
-      - export CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token --domain unicorns --domain-owner 725741144521 --query authorizationToken --output text)
-  
+      - export CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token --domain unicorns --domain-owner $AWS_ACCOUNT_ID --query authorizationToken --output text)
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+
   build:
     commands:
       - echo "Build started on $(date)"
-      - mvn -s settings.xml compile
-  
+      - mvn -s settings.xml clean compile
+      - echo "Building Docker image..."
+      - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
+
   post_build:
     commands:
-      - echo "Build completed on $(date)"
+      - echo "Packaging application..."
       - mvn -s settings.xml package
+      - echo "Tagging and pushing Docker image..."
+      - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG 725741144521.dkr.ecr.us-east-1.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+      - docker push 725741144521.dkr.ecr.us-east-1.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+      - echo "Build completed on $(date)"
 
 artifacts:
   files:
